@@ -37,19 +37,19 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 
     # TODO: Kernel Building Steps
 	# QEMU build - clean: deep cleans kernel build tree by removing .config files
-	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-mrproper
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}mrproper
 	
 	#QEMU build - defconfig: configuring virt arm devboard for simulation in QEMU
-	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-defconfig
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}defconfig
 
 	#QEMU build - vmlinux: building kernel image for booting with QEMU
-	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-all
+	make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}all
 	
 	#QEMU build - module: building any modules needed for the kernel
-	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-modules
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}modules
 	
 	#QEMU build - devicetree
-	make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-dtbs	
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}dtbs
 fi
 
 echo "Adding the Image in outdir"
@@ -63,6 +63,13 @@ then
 fi
 
 # TODO: Create necessary base directories
+ROOTFS=${OUTDIR}/rootfs
+
+mkdir -p ${ROOTFS}
+cd "$OUTDIR"
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -71,6 +78,11 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+	make distclean
+	make defconfig
+	make ARCH=${ARCH} CROSS_COMPILER=${CROSS_COMPILE}
+	make CONFIG_PREFIX=${ROOTFS} ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install 
+
 else
     cd busybox
 fi
