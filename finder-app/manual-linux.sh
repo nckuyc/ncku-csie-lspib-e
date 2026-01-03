@@ -37,19 +37,19 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 
     #Kernel Building Steps
 	# QEMU build - clean: deep cleans kernel build tree by removing .config files
-	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}mrproper
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
 	
 	#QEMU build - defconfig: configuring virt arm devboard for simulation in QEMU
-	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}defconfig
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
 
 	#QEMU build - vmlinux: building kernel image for booting with QEMU
-	make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}all
+	make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
 	
 	#QEMU build - module: building any modules needed for the kernel
-	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}modules
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
 	
 	#QEMU build - devicetree
-	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}dtbs
+	make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
 echo "Adding the Image in outdir"
@@ -66,7 +66,7 @@ fi
 ROOTFS=${OUTDIR}/rootfs
 
 mkdir -p ${ROOTFS}
-cd "$OUTDIR"
+cd "$ROOTFS"
 mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
 mkdir -p usr/bin usr/lib usr/sbin
 mkdir -p var/log
@@ -86,7 +86,7 @@ else
 fi
 
 #Make and install busybox
-make ARCH=${ARCH} CROSS_COMPILER=${CROSS_COMPILE}
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX=${ROOTFS} ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 echo "Library dependencies"
@@ -99,7 +99,7 @@ cd "$ROOTFS"
 SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 
 cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${ROOTFS}/lib/
-cp ${SYSROOT}/lib64/lib64/libm.so.6 ${ROOTFS}/lib64/
+cp ${SYSROOT}/lib64/libm.so.6 ${ROOTFS}/lib64/
 cp ${SYSROOT}/lib64/libresolv.so.2 ${ROOTFS}/lib64/
 cp ${SYSROOT}/lib64/libc.so.6 ${ROOTFS}/lib64/
 
