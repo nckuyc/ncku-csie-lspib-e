@@ -53,7 +53,8 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 fi
 
 echo "Adding the Image in outdir"
-cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
+ls -l ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}/Image
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -90,9 +91,6 @@ fi
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX=${ROOTFS} ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
-echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 #Add library dependencies to rootfs
 
@@ -103,6 +101,10 @@ cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${ROOTFS}/lib/
 cp ${SYSROOT}/lib64/libm.so.6 ${ROOTFS}/lib64/
 cp ${SYSROOT}/lib64/libresolv.so.2 ${ROOTFS}/lib64/
 cp ${SYSROOT}/lib64/libc.so.6 ${ROOTFS}/lib64/
+
+echo "Library dependencies"
+${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
+${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 #Make device nodes
 sudo mknod -m 666 ${ROOTFS}/dev/null c 1 3
@@ -115,7 +117,7 @@ make clean
 make CROSS_COMPILE=${CROSS_COMPILE}   #gcc is appended in Makefile
 
 # Copy the finder related scripts and executables to the /home directory on the target rootfs
-cp -r ${FINDER_APP_DIR} ${ROOTFS}/home/
+cp -r ./writer ./finder.sh ./conf/ ./finder-test.sh ./autorun-qemu.sh ${ROOTFS}/home/
 
 #Chown the root directory
 cd "$ROOTFS"
