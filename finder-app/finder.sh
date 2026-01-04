@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # The requirements for this script are:
 
