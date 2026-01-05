@@ -16,26 +16,66 @@ void* threadfunc(void* thread_param)
     // Implementing: wait, obtain mutex, wait, release mutex as described by thread_data structure
     	
 	struct thread_data* thread_args = (struct thread_data *) thread_param;
+	thread_args->thread_complete_success = true;    // by default, set to true. Sets to false on occurrence of any errors.
 	
-	// First we wait for specified time to obtain mutex 
-	struct timespec wait_obtain;
-	wait_obtain_sec = 0;
-	wait_obtain_nsec = (int)(thread_args->wait_to_obtain_mutex) * 1e6;
+	// First we wait for specified time to obtain mutex
+	long ms_obtain = thread_args->wait_to_obtain_mutex;
+
+	struct timespec wait_obtain, wait_obtain_rem;
+	wait_obtain.tv_sec = ms_obtain / 1000;		// gets whole second value
+	wait_obtain.tv_nsec = (ms_obtain % 1000) * 1000000L;	// converts leftover from "ms/1000" into nanoseconds
+
 	DEBUG_LOG("Thread is sleeping for %d milliseconds", thread_args->wait_to_obtain_mutex);
 
-	if (nanosecond(&wait_obtain, NULL) == -1)
+	while (nanosleep(&wait_obtain, &wait_obtain_rem) == -1)
 	{
-		if (errno == EINTR)
-			ERROR_LOG("Sleep interrupted: %s", strerror(errno));
-		else
-			ERROR_LOG("Sleep failed: %s", strerror(errno));
+		if (errno == EINTR){
+			DEBUG_LOG("Sleep interrupted: %s", strerror(errno));
+			wait_obtain = wait_obtain_rem;
+			continue;
+		}
+		ERROR_LOG("Sleep failed: %s", strerror(errno));
+		thread_args->thread_complete_success = false;
+		break;
 	}
 
-	// Let's obtain/lock the mutex for thread_args struct
-	int rc = pthread_mutex_lock(&threads_args->mutex);
+	// Let's lock the mutex for thread_args struct
+	int rc = pthread_mutex_lock(&thread_args->mutex);
 
+	if (rc != 0){
+		ERROR_LOG("pthread_mutex_lock failed with %d: %s", rc , strerror(rc));
+		thread_args->thread_complete_success = false;
+		return thread_args;
+	}
 
-    return thread_param;
+	// Now let's sleep the thread for a defined time before releasing the mutex
+	long ms_release = thread_args->wait_to_release_mutex;
+
+	struct timespec wait_release, wait_release_rem;
+	wait_release.tv_sec = ms_release / 1000;
+	wait_release.tv_nsec = (ms_release % 1000) * 1000000L;
+
+	DEBUG_LOG("Thread is sleeping for %d milliseconds", thread_args->wait_to_release_mutex);
+
+	while (nanosleep(&wait_release, &wait_release_rem) == -1)
+	{	
+		if (errno == EINTR){
+			DEBUG_LOG("Sleep interrupted: %s", strerror(errno));
+			wait_release = wait_release_rem;
+			continue;
+		}
+		ERROR_LOG("Sleep failed: %s", strerror(errno));
+		thread_args->thread_complete_success = false;
+		break;
+	}
+	
+	rc = pthread_mutex_unlock(&thread_args->mutex);
+	if (rc != 0){
+		ERROR_LOG("pthread_mutex_unlock failed with %d: %s", rc, strerror(rc));
+		thread_args->thread_complete_success = false;
+	}
+
+    return thread_args;
 }
 
 
