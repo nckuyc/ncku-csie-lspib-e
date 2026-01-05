@@ -40,7 +40,7 @@ void* threadfunc(void* thread_param)
 	}
 
 	// Let's lock the mutex for thread_args struct
-	int rc = pthread_mutex_lock(&thread_args->mutex);
+	int rc = pthread_mutex_lock(thread_args->mutex);
 
 	if (rc != 0){
 		ERROR_LOG("pthread_mutex_lock failed with %d: %s", rc , strerror(rc));
@@ -69,7 +69,7 @@ void* threadfunc(void* thread_param)
 		break;
 	}
 	
-	rc = pthread_mutex_unlock(&thread_args->mutex);
+	rc = pthread_mutex_unlock(thread_args->mutex);
 	if (rc != 0){
 		ERROR_LOG("pthread_mutex_unlock failed with %d: %s", rc, strerror(rc));
 		thread_args->thread_complete_success = false;
@@ -97,7 +97,7 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
 	thread_data->thread_complete_success = false;
 	
 	// create pthread using thread_func() as callback
-	int rc = pthread_create(thread, NULL, thread_func, thread_data);
+	int rc = pthread_create(thread, NULL, threadfunc, thread_data);
 	if (rc != 0){
 		ERROR_LOG("Thread couldn't be created: %s", strerror(rc));
 		return false;
@@ -106,7 +106,7 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
 
 	//destroy pthread using join and get return value
 	void *return_val;
-	rc = pthread_join(thread, &return_val);
+	rc = pthread_join(*thread, &return_val);
 	if (rc != 0){
 		ERROR_LOG("pthread_join for thread %lu failed: %s", (unsigned long)*thread, strerror(rc));
 		return false;
