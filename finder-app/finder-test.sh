@@ -42,7 +42,7 @@ rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
 # modified the file lookup for assignment 4 or later
-if [ ! -f /etc/finder-app/assignment.txt ]; then
+if [ ! -f /etc/finder-app/conf/assignment.txt ]; then
 	ASSIGN_DIR='./conf'
 else
 	ASSIGN_DIR='/etc/finder-app/conf'
