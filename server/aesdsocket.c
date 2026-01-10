@@ -26,13 +26,26 @@
 #define PORT "9000"
 #define BACKLOG 10	// no. of queued pending connections before refusal
 
+// we need a global variable that is read/write atomic to inform `accept loop` of execution termination
+// also we need to inform compiler that the variable can change outside of the normal flow of code
+// like through signal interrupts; so compiler never caches this into register and reloads it time-to-time
+static volatile sig_atomic_t exit_requested = 0;
+
+
 // function that saves the current errno, clears all the zombie child processes and reverts errno to previous value
 void sigchild_handler(int sig)
 {	
-	(void)s;					// supresses unused variable `s` warnings
+	(void)sig;					// supresses unused variable `sig` warnings
 	int parent_errno = errno;
 	while(waitpid(-1, NULL, WNOHANG) > 0);		//-1 means wait for any child process; WNOHANG means don't block
 	errno = parent_errno;
+}
+
+// function to handle graceful termination of socket server
+void handle_server_termination(int sig)
+{	
+	(void)sig;
+	exit_requested = 1;
 }
 
 int main(int argc, char *argv[])
@@ -105,14 +118,14 @@ int main(int argc, char *argv[])
 		return -1;
 	}	
 	
-	struct sigaction sa;		//struct that stores the sa_handler, sa_mask and others for handling zombie child processes
+	struct sigaction purge;		//struct that stores the sa_handler, sa_mask and others for handling zombie child processes
 	
 	// now before accepting new connection, we have to remove all zombie child processes	
-	sa.sa_handler = &sigchild_handler;	//pointer is passed; & is unneeded as C implicitly assigns fucntion pointer if no paranthesis passed
-	sigemptyset(&sa.sa_mask);		// initializes the signalset `sa.sa_mask` to empty; so no signal gets blocked except SIGCHILD
-	sa.sa_flags = SA_RESTART;		// restarts accept() syscall after SIGCHILD interrupts and is handled by sigchild_handler()	
+	purge.sa_handler = &sigchild_handler;	//pointer is passed; & is unneeded as C implicitly assigns fucntion pointer if no paranthesis passed
+	sigemptyset(&purge.sa_mask);		// initializes the signalset `sa.sa_mask` to empty; so no signal gets blocked except SIGCHILD
+	purge.sa_flags = SA_RESTART;		// restarts accept() syscall after SIGCHILD interrupts and is handled by sigchild_handler()	
 	
-	if(sigaction(SIGCHILD, &sa, NULL) == -1)
+	if(sigaction(SIGCHILD, &purge, NULL) == -1)
 	{
 		fprintf(stderr, "Sigaction failed to kill all the terminated child processes:%s\n", strerror(errno));
 		return -1;
@@ -128,8 +141,28 @@ int main(int argc, char *argv[])
 	char service[NI_MAXSERV];
 	
 	openlog("server", LOG_PID | LOG_NDELAY, LOG_USER);
+	
+	// sigaction handling in the case of SIGINT or SIGTERM
+	struct sigaction grace_term;
+	memset(&grace_term, 0, sizeof grace_term);
+	grace_term.sa_handler = handle_server_termination;
+	sigemptyset(&grace_term.sa_mask);
+	grace_term.sa_flags = 0;	// restart should be avoided in case of SIGINT or SIGTERM
+	
+	if (sigaction(SIGINT, &grace_term, NULL) == -1) 
+	{
+		fprintf(stderr, "sigaction(SIGINT) failed: %s\n", strerror(errno));
+		return -1;
+	}
 
-	while (1)
+	if (sigaction(SIGTERM, &grace_term, NULL) == -1) 
+	{
+		fprintf(stderr, "sigaction(SIGTERM) failed: %s\n", strerror(errno));
+		return -1;
+	}
+	
+
+	while (!exit_requested)
 	{
 		new_sockfd = accept(sockfd, (struct sockaddr *)&incoming_addr, &size_inaddr);
 
@@ -150,8 +183,16 @@ int main(int argc, char *argv[])
 		}
 		else
 			fprintf(stderr, "Client information couldn't be determined");
+
+		close(new_sockfd);
 	}
 
+	syslog(LOG_INFO, "Caught signal, exiting");
+
+	close(sockfd);
+	unlink('/var/tmp/aesdsocketdata');
+
 	closelog();
+
 	return 0;
 }
