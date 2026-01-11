@@ -50,6 +50,17 @@ void sigchild_handler(int sig)
 	errno = parent_errno;
 }
 
+// separate cleanup for child process for socket connection 
+void child_cleanup(int sockfd, char *recv_buffer, int file_fd, const char *host)
+{
+    if (file_fd != -1) close(file_fd);
+    if (sockfd != -1) close(sockfd);
+    if (recv_buffer) free(recv_buffer);
+    if (host) syslog(LOG_INFO, "Closed connection from %s\n", host);
+    _exit(EXIT_FAILURE);  // exits safely
+}
+
+
 // function to handle graceful termination of socket server
 void handle_server_termination(int sig)
 {	
@@ -228,9 +239,7 @@ int main()
 				if (!new_buffer)
 				{
 					perror("realloc to recv_buffer failed");
-					free(recv_buffer);
-					close(new_sockfd);
-					break;
+					child_cleanup(new_sockfd, recv_buffer, -1, host);
 				}
 				recv_buffer = new_buffer;		//passing ptr from newly allocated memory
 				memcpy(recv_buffer + buffer_size, temp, bytes_read);		// copies `bytes_read` bytes to recv_buffer
@@ -246,9 +255,7 @@ int main()
 						int fd = open(packet_file, O_CREAT | O_RDWR | O_APPEND, 0644);
 						if (fd == -1){
 							perror("file /var/tmp/aesdsocketdata couldn't be either created or appended");
-							close(new_sockfd);
-							free(recv_buffer);
-							return -1;
+							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
 						// considering partial writes
 						ssize_t total_written = 0;
@@ -257,24 +264,21 @@ int main()
 							if (nr == -1){
 								if (errno == EINTR) continue;
 								perror("write failed");
-								close(fd);
-								close(new_sockfd);
-								free(recv_buffer);
-								return -1;
+								child_cleanup(new_sockfd, recv_buffer, fd, host);
 							}
 							total_written += nr;
 						}
 						if (close(fd) == -1)
 						{
 							perror("file close failed");
-							return -1;
+							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
 						
 						// after each successful packet read/append, we now send back the full file to client
 						fd = open(packet_file, O_RDONLY);
 						if (fd == -1){
 							perror("file opening failed for read");
-							return -1;
+							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
 
 						char buf[CHUNK_SIZE];
@@ -287,9 +291,7 @@ int main()
 								if (ns == -1){
 									if (errno == EINTR)	continue;
 									perror("sending failed");
-									close(fd);
-									close(new_sockfd);
-									return -1;
+									child_cleanup(new_sockfd, recv_buffer, fd, host);
 								}
 								total_sent += ns;
 							}
@@ -298,11 +300,12 @@ int main()
 						else if (nr == -1){
 							if (errno == EINTR)	continue;
 							perror("failed to read from file");
+							child_cleanup(new_sockfd, recv_buffer, fd, host);
 						}
 						if (close(fd) == -1)
                         {
                             perror("file close failed");
-							return -1;
+							_exit(EXIT_FAILURE);
                     	}
 
 						//now we remove processed packet out of the buffer
