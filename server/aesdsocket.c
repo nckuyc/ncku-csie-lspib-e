@@ -26,9 +26,9 @@
 #include <sys/file.h> 
 
 #define PORT "9000"
-#define BACKLOG 10	// no. of queued pending connections before refusal
-
-#define CHUNK_SIZE 4096		// no. of bytes we can read/write at once
+#define BACKLOG 10				// no. of queued pending connections before refusal
+#define CHUNK_SIZE 4096				// no. of bytes we can read/write at once
+#define PIDFILE "/tmp/aesdsocket.pid"		//pid file to store pid of aesdsocket daemon
 
 // we need a global variable that is read/write atomic to inform `accept loop` of execution termination
 // also we need to inform compiler that the variable can change outside of the normal flow of code
@@ -60,6 +60,25 @@ void child_cleanup(int sockfd, char *recv_buffer, int file_fd, const char *host)
     _exit(EXIT_FAILURE);  // exits safely
 }
 
+// write pid to "/var/run/aesdsocket.pid" 
+static int write_pidfile()
+{
+	int fd = open(PIDFILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) {
+		syslog(LOG_ERR, "Failed to open pidfile: %s", strerror(errno));
+		return -1;
+	}
+
+	char buf[32];
+	int pid_len = snprintf(buf, sizeof(buf), "%d\n", getpid());
+	if ((write(fd, buf, pid_len)) == -1){
+		syslog(LOG_ERR, "Failed to write to pidfile: %s", strerror(errno));
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	return 0;	
+}
 
 // function to handle graceful termination of socket server
 void handle_server_termination(int sig)
@@ -159,7 +178,7 @@ int main(int argc, char *argv[])
 	// struct servinfo exhausted. no socket bounded to address!	
 	if (p == NULL)
 	{
-		fprintf(stderr, "Server socket failed to bind!");
+		fprintf(stderr, "Server socket failed to bind!\n");
 		return -1;
 	}
 
@@ -212,6 +231,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "sigaction(SIGTERM) failed: %s\n", strerror(errno));
 		return -1;
 	}
+
 	
 	/* Now we daemonize the process before accept loop by:
 	*	1. forking into a child,
@@ -221,7 +241,13 @@ int main(int argc, char *argv[])
 	*	5. detaching the grandchild process
 	*/
 	if (daemon_mode)
-	{
+	{		
+		// if pidfile already exists, that means aesdsocket is already running as daemon
+    		//if (access(PIDFILE, F_OK) == 0) {
+        	//	syslog(LOG_ERR, "Pidfile exists, daemon already running?");
+        	//	exit(EXIT_FAILURE);
+   		//}
+
 		pid_t pid = fork();
 		if (pid < 0){
 			perror("first fork");
@@ -272,7 +298,13 @@ int main(int argc, char *argv[])
 		    exit(EXIT_FAILURE);
 		}
 		// now our process is a true daemon
-
+		
+		// now we write pidfile for start-stop init script
+		if (write_pidfile() != 0){
+			syslog(LOG_ERR, "Failed to write to pidfile, exiting...");
+			exit(EXIT_FAILURE);
+		}
+		syslog(LOG_INFO, "pid successfully written to %s", PIDFILE);
 	}
 
 	while (!exit_requested)

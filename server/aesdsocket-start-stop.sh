@@ -1,7 +1,7 @@
 #!/bin/sh
 #Startup script for `aesdsocket` in daemon mode with `-d` options
 
-PIDFILE=/var/run/aesdsocket.pid
+PIDFILE=/tmp/aesdsocket.pid
 
 case "$1" in
 	start)
