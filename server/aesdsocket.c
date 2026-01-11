@@ -68,8 +68,26 @@ void handle_server_termination(int sig)
 	exit_requested = 1;
 }
 
-int main()
+int main(int argc, char *argv[])
 {	
+	// we first check if this socket server runs as `normal process` or as `daemon` with "-d" argument
+	int daemon_mode = 0;
+	int opt;
+
+	// getopt returns each option one-by-one; if everything is parsed, it returns -1
+	while((opt = getopt(argc, argv, "d")) != -1) {
+		switch (opt) {
+			case 'd':
+				daemon_mode = 1;
+				break;
+			case '?':
+			default:
+				fprintf(stderr, "Usage: %s [-d]\n", argv[0]);
+				exit(EXIT_FAILURE);
+		}
+	}
+	printf("Sever running in daemon_mode = %d...\n", daemon_mode);
+
 	int sockfd;
 	char *packet_file = "/var/tmp/aesdsocketdata";
 
@@ -195,6 +213,67 @@ int main()
 		return -1;
 	}
 	
+	/* Now we daemonize the process before accept loop by:
+	*	1. forking into a child,
+	* 	2. exiting the parent,
+	*	3. creating a new session,
+	*	4. exiting the child again, and
+	*	5. detaching the grandchild process
+	*/
+	if (daemon_mode)
+	{
+		pid_t pid = fork();
+		if (pid < 0){
+			perror("first fork");
+			close(sockfd);
+			closelog();
+			return -1;
+		}
+		else if (pid > 0)
+			exit(EXIT_SUCCESS);		//parent process exits; child is orphaned
+
+		if (setsid() < 0){			//runs the daemon process in a new session; detaches from the old controlling terminal
+			perror("setsid");
+			close(sockfd);
+			closelog();
+			return -1;
+		}
+
+		// now we again fork the child process and orphan the grandchild process
+		pid = fork();
+		if (pid < 0){
+			perror("second fork");
+			close(sockfd);
+			closelog();
+			return -1;
+		}
+		else if (pid > 0)
+			exit(EXIT_SUCCESS);
+
+		// now grandchild is not the session leader of the newly created session; it is fully detached
+		// now we change root directory to avoid blocking filesystem unmounts and redirect stdin/stdout/stderr
+		if (chdir("/") != 0) {
+		    perror("chdir");
+		    exit(EXIT_FAILURE);
+		}
+
+		if (freopen("/dev/null", "r", stdin) == NULL) {
+		    perror("freopen stdin");
+		    exit(EXIT_FAILURE);
+		}
+
+		if (freopen("/dev/null", "w", stdout) == NULL) {
+		    perror("freopen stdout");
+		    exit(EXIT_FAILURE);
+		}
+
+		if (freopen("/dev/null", "w", stderr) == NULL) {
+		    perror("freopen stderr");
+		    exit(EXIT_FAILURE);
+		}
+		// now our process is a true daemon
+
+	}
 
 	while (!exit_requested)
 	{
@@ -202,7 +281,7 @@ int main()
 
 		if (new_sockfd == -1){
 			if (errno == EINTR && exit_requested) break;			// if -1 is due to SIGINT/SIGTERM, break out of the accept loop; else try again for connection
-			fprintf(stderr, "Socket connection refused: %s\n", strerror(errno));
+			syslog(LOG_ERR, "Socket connection refused: %s", strerror(errno));
 			continue;
 		}
 
@@ -212,11 +291,10 @@ int main()
 			       	NI_NUMERICHOST | NI_NUMERICSERV);	
 		if (rc == 0)
 		{	
-			printf("Server connected with client %s:%s\n", host, service);
 			syslog(LOG_INFO, "Accepted connection from %s", host);
 		}
 		else
-			fprintf(stderr, "Client information couldn't be determined");
+			syslog(LOG_WARNING, "Client information couldn't be determined");
 		
 		pid_t pid = fork();
 		
@@ -327,13 +405,13 @@ int main()
 			close(new_sockfd);
 			free(recv_buffer);
 			syslog(LOG_INFO, "Closed connection from %s", host);
-			_exit(0);	//exiting out of child immediately
+			_exit(EXIT_SUCCESS);	//exiting out of child immediately
 		}
 		else if (pid > 0)	
 			close(new_sockfd);
 		else
 		{
-			fprintf(stderr, "Child process couldn't be forked: %s\n", strerror(errno));
+			syslog(LOG_ERR, "Child process couldn't be forked: %s", strerror(errno));
 			close(new_sockfd);
 		}
 	}
