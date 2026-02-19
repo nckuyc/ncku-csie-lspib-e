@@ -386,7 +386,7 @@ int main(int argc, char *argv[])
 		{
 		case 'd':
 			daemon_mode = 1;
-			printf("Sever running in daemon_mode = %d...\n", daemon_mode);
+			syslog(LOG_INFO, "Sever running in daemon_mode");
 			break;
 		case '?':
 		default:
@@ -612,13 +612,15 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-			// if connection was established, we log the client information
+		// if connection was established, we log the client information
 		int rc = getnameinfo((struct sockaddr *)&incoming_addr, size_inaddr,
-						 host, sizeof(host), service, sizeof(service),
-						 NI_NUMERICHOST | NI_NUMERICSERV);
+							 host, sizeof(host), service, sizeof(service),
+							 NI_NUMERICHOST | NI_NUMERICSERV);
 
-	if (rc == 0) syslog(LOG_INFO, "Accepted connection from %s", host);
-	else syslog(LOG_WARNING, "Client information couldn't be determined");
+		if (rc == 0)
+			syslog(LOG_INFO, "Accepted connection from %s", host);
+		else
+			syslog(LOG_WARNING, "Client information couldn't be determined");
 
 		/* make node */
 		node_t *worker_node = calloc(1, sizeof(*worker_node));
@@ -658,13 +660,13 @@ int main(int argc, char *argv[])
 	// Join timestamp thread
 	if (ts_started)
 	{
+		pthread_cancel(ts_thread);
 		pthread_join(ts_thread, NULL);
 	}
 
 	close(listen_fd);
-	unlink("/var/tmp/aesdsocketdata");
+	unlink(packet_file);
 	unlink(PIDFILE);
-
 	closelog();
 
 	return 0;
